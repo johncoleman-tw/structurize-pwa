@@ -1,0 +1,10 @@
+node_modules
+dist
+.DS_Store
+.vite
+*.log
+
+# public/wasm-host and public/diagram-viewer are vendored in this repo so that
+# CI builds (e.g. GitHub Pages) work without access to the upstream structurize
+# repo. Refresh them locally with `pnpm copy-assets`. CI sets SKIP_COPY_ASSETS=1
+# to leave them alone.

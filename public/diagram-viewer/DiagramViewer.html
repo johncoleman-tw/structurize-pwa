@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- jQuery must be first (required by structurizr-ui.js and Bootstrap modal calls) -->
+    <script src="js/jquery-3.6.3.min.js"></script>
+    <script src="js/bootstrap-5.3.7.min.js"></script>
+
+    <!-- Structurizr core -->
+    <script src="js/structurizr.js"></script>
+    <script src="js/structurizr-util.js"></script>
+    <script src="js/structurizr-ui.js"></script>
+    <script src="js/structurizr-workspace.js"></script>
+
+    <!-- JointJS 4.x + auto-layout -->
+    <script src="js/jointjs-Core-4.1.3.js"></script>
+    <script src="js/dagre-1.1.8.js"></script>
+    <script src="js/graphlib-2.2.4.min.js"></script>
+    <script src="js/jointjs-DirectedGraph-4.1.3.min.js"></script>
+
+    <!-- Structurizr diagram engine + extras -->
+    <script src="js/structurizr-diagram.js"></script>
+    <script src="js/structurizr-navigation.js"></script>
+    <script src="js/structurizr-tooltip.js"></script>
+    <script src="js/structurizr-quick-navigation.js"></script>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/bootstrap-5.3.7.min.css">
+    <link rel="stylesheet" href="css/structurizr.css">
+
+    <style>
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            font-family: Tahoma, Verdana, Helvetica, Arial, sans-serif;
+        }
+
+        /* ── Home page ──────────────────────────────────────────────────── */
+        #home {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 100;
+            overflow-y: auto;
+            background: #f9f9f9;
+            display: none;
+        }
+        #home.active { display: block; }
+
+        #home-header {
+            padding: 28px 28px 18px;
+            border-bottom: 1px solid #ddd;
+            background: #fff;
+        }
+        #home-title {
+            font-size: 24px; font-weight: bold; color: #222; margin-bottom: 4px;
+        }
+        #home-description { font-size: 13px; color: #666; }
+
+        #home-body { padding: 24px 28px 48px; }
+
+        .workspaceSummary {
+            position: relative;
+            display: inline-block;
+            vertical-align: top;
+            margin: 8px;
+            font-size: 14px;
+            width: 220px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            background: #fff;
+            transition: border-color 0.12s, box-shadow 0.12s;
+        }
+        .workspaceSummary:hover {
+            border-color: #3066B7;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.10);
+        }
+        .workspaceSummary .ws-name {
+            font-weight: bold; font-size: 14px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            margin-bottom: 2px;
+        }
+        .workspaceSummary .ws-type {
+            font-size: 11px; color: #888; margin-bottom: 8px;
+        }
+        .workspaceThumbnail {
+            width: 100%; height: 130px;
+            background: #f0f0f0;
+            border-radius: 2px;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+        .workspaceThumbnail img {
+            max-width: 100%; max-height: 100%;
+            object-fit: contain;
+        }
+        .workspaceThumbnail svg { opacity: 0.3; }
+
+        #home-empty {
+            text-align: center; color: #999;
+            padding: 60px 0; font-size: 14px;
+        }
+
+        /* ── Diagram controls (toolbar) ─────────────────────────────────── */
+        #diagramControls {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 20;
+            background: #fff;
+            border-bottom: 1px solid #ddd;
+            display: none;
+        }
+        #diagramControls.active { display: block; }
+        #diagramControls .row { margin: 0; }
+        #diagramControls .toolbar-row {
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: nowrap;
+        }
+        #diagramControls .toolbar-sep {
+            width: 1px; height: 24px;
+            background: #ddd;
+            margin: 0 4px;
+            flex-shrink: 0;
+        }
+
+        /* ── Main content area ──────────────────────────────────────────── */
+        #mainContent {
+            position: fixed;
+            left: 0; right: 0; bottom: 0;
+            top: 0; /* updated via JS when toolbar visible */
+            display: flex;
+            overflow: hidden;
+        }
+
+        #diagramNavigationPanel {
+            flex-shrink: 0;
+            width: 200px;
+            overflow-y: scroll;
+            background: #fff;
+            border-right: 1px solid #ddd;
+        }
+
+        #diagram-col {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* The JointJS canvas parent — always fills diagram-col */
+        #diagram {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            overflow: hidden;
+            outline: none;
+        }
+
+        /* ── Progress message ────────────────────────────────────────────── */
+        #progressMessage {
+            position: fixed;
+            z-index: 1000;
+            opacity: .90;
+            bottom: 10px; right: 10px;
+            text-align: center;
+            font-size: 14px;
+            border-radius: 5px;
+            padding: 14px 20px;
+            background: #999999;
+            color: #fff;
+            max-width: 80%;
+        }
+        #progressMessage.hidden { display: none; }
+
+        /* ── Tooltip ─────────────────────────────────────────────────────── */
+        #tooltip {
+            font-size: 13px;
+            color: #000;
+            background: #eeeeee;
+            padding: 10px;
+            margin: 10px;
+            position: fixed;
+            z-index: 50;
+            opacity: 0.98;
+            border: 2px solid #cccccc;
+            border-radius: 3px;
+            max-width: 400px;
+        }
+        #tooltip.hidden { display: none; }
+        #tooltipHeader { font-weight: bold; margin-bottom: 4px; }
+        #tooltipParent { color: #888; font-size: 12px; }
+        #tooltipType { color: #888; font-size: 12px; }
+        #tooltipDescription { margin-top: 6px; }
+        #tooltipTags { margin-top: 4px; font-size: 12px; color: #666; }
+        #tooltipProperties { margin-top: 4px; font-size: 12px; color: #666; }
+        #tooltipUrl { margin-top: 4px; font-size: 12px; }
+
+        /* ── Navigation panel thumbnails ────────────────────────────────── */
+        .navModeToggles {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            text-align: center;
+        }
+
+        /* ── Lasso ───────────────────────────────────────────────────────── */
+        #lasso {
+            background: #dddddd;
+            position: absolute;
+            z-index: 10;
+            opacity: 0.5;
+            border: 2px #cccccc solid;
+        }
+        #lasso.hidden { display: none; }
+
+        /* ── Embedded controls overlay (zoom, animation, fullscreen) ─────── */
+        #embeddedControls {
+            text-align: right;
+            position: absolute;
+            bottom: 10px; right: 10px;
+            opacity: 0.2;
+            z-index: 100;
+            transition: opacity 0.2s;
+        }
+        #embeddedControls:hover { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- HOME PAGE                                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="home">
+    <div id="home-header">
+        <div id="home-title">Workspace</div>
+        <div id="home-description"></div>
+    </div>
+    <div id="home-body">
+        <div id="home-cards"></div>
+        <div id="home-empty" class="hidden">
+            No diagrams found. Add views to your DSL file.
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- TOOLBAR                                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="diagramControls">
+    <div class="toolbar-row">
+        <!-- Home -->
+        <button id="homeButton" class="btn btn-default" title="Home">
+            <img src="bootstrap-icons/house.svg" class="icon-btn">
+        </button>
+        <!-- Back -->
+        <button id="backButton" class="btn btn-default backButton" title="Go back [b]" disabled>
+            <img src="bootstrap-icons/arrow-90deg-left.svg" class="icon-btn">
+        </button>
+
+        <div class="toolbar-sep"></div>
+
+        <!-- Diagram key -->
+        <button id="diagramKeyButton" class="btn btn-default modelViewButtons" title="Diagram key [i]">
+            <img src="bootstrap-icons/info-circle.svg" class="icon-btn">
+        </button>
+        <!-- Tooltip toggle -->
+        <button id="diagramTooltipOnButton" class="btn btn-default modelViewButtons diagramTooltipOnButton" title="Tooltips on [t]">
+            <img src="bootstrap-icons/chat-square-text.svg" class="icon-btn">
+        </button>
+        <button id="diagramTooltipOffButton" class="btn btn-default modelViewButtons hidden diagramTooltipOffButton" title="Tooltips off [t]">
+            <img src="bootstrap-icons/chat-square-text-fill.svg" class="icon-btn">
+        </button>
+        <!-- Filter -->
+        <button id="filterOnButton" class="btn btn-default hidden" title="Filter">
+            <img src="bootstrap-icons/funnel.svg" class="icon-btn">
+        </button>
+        <button id="filterOffButton" class="btn btn-default hidden" title="Filter active">
+            <img src="bootstrap-icons/funnel-fill.svg" class="icon-btn">
+        </button>
+        <!-- Perspectives -->
+        <button id="perspectivesOnButton" class="btn btn-default hidden" title="Perspectives">
+            <img src="bootstrap-icons/binoculars.svg" class="icon-btn">
+        </button>
+        <button id="perspectivesOffButton" class="btn btn-default hidden" title="Perspectives active">
+            <img src="bootstrap-icons/binoculars-fill.svg" class="icon-btn">
+        </button>
+
+        <div class="toolbar-sep"></div>
+
+        <!-- Animation controls -->
+        <button id="stepBackwardInAnimationButton" class="btn btn-default hidden dynamicDiagramButton stepBackwardAnimationButton" title="Step backward [,]">
+            <img src="bootstrap-icons/skip-backward.svg" class="icon-btn">
+        </button>
+        <button id="startAnimationButton" class="btn btn-default hidden dynamicDiagramButton startAnimationButton" title="Play">
+            <img src="bootstrap-icons/play.svg" class="icon-btn">
+        </button>
+        <button id="stopAnimationButton" class="btn btn-default hidden dynamicDiagramButton stopAnimationButton" title="Stop">
+            <img src="bootstrap-icons/stop.svg" class="icon-btn">
+        </button>
+        <button id="stepForwardInAnimationButton" class="btn btn-default hidden dynamicDiagramButton stepForwardAnimationButton" title="Step forward [.]">
+            <img src="bootstrap-icons/skip-forward.svg" class="icon-btn">
+        </button>
+
+        <div class="toolbar-sep dynamicDiagramButton hidden"></div>
+
+        <!-- Zoom -->
+        <button id="zoomOutButton" class="btn btn-default modelViewButtons" title="Zoom out [-]">
+            <img src="bootstrap-icons/zoom-out.svg" class="icon-btn">
+        </button>
+        <button id="zoomInButton" class="btn btn-default modelViewButtons" title="Zoom in [+]">
+            <img src="bootstrap-icons/zoom-in.svg" class="icon-btn">
+        </button>
+
+        <div class="toolbar-sep"></div>
+
+        <!-- Export -->
+        <button id="exportImagesButton" class="btn btn-default modelViewButtons" title="Export to SVG/PNG">
+            <img src="bootstrap-icons/file-earmark-image.svg" class="icon-btn">
+        </button>
+
+        <!-- Spacer -->
+        <div style="flex:1"></div>
+
+        <!-- Dark/Light/System mode -->
+        <a id="renderingModeLightLink" href="" title="Light">
+            <img src="bootstrap-icons/sun.svg" class="icon-sm">
+        </a>
+        <a id="renderingModeDarkLink" href="" title="Dark">
+            <img src="bootstrap-icons/moon-fill.svg" class="icon-sm">
+        </a>
+        <a id="renderingModeSystemLink" href="" title="System">
+            <img src="bootstrap-icons/sliders.svg" class="icon-sm">
+        </a>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- MAIN CONTENT: nav panel (col-2) + diagram canvas (col-10)              -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="mainContent">
+    <!-- Left nav: diagram thumbnails -->
+    <div id="diagramNavigationPanel">
+        <div class="navModeToggles">
+            <a id="renderingModeLightLink2" href="" title="Light"><img src="bootstrap-icons/sun.svg" class="icon-sm"></a> |
+            <a id="renderingModeDarkLink2" href="" title="Dark"><img src="bootstrap-icons/moon-fill.svg" class="icon-sm"></a> |
+            <a id="renderingModeSystemLink2" href="" title="System"><img src="bootstrap-icons/sliders.svg" class="icon-sm"></a>
+        </div>
+        <div id="diagramNavigation" style="padding-top: 10px;"></div>
+    </div>
+
+    <!-- Diagram canvas -->
+    <div id="diagram-col">
+        <div id="diagram" tabindex="1">
+
+            <!-- Progress overlay -->
+            <div id="progressMessage" class="hidden"></div>
+
+            <!-- Tooltip -->
+            <div id="tooltip" class="hidden">
+                <div id="tooltipHeader">
+                    <div id="tooltipName"></div>
+                    <div id="tooltipParent"></div>
+                </div>
+                <hr>
+                <div id="tooltipMetadata"></div>
+                <div id="tooltipType"></div>
+                <div id="tooltipDescription"></div>
+                <div id="tooltipTags"></div>
+                <div id="tooltipProperties"></div>
+                <div id="tooltipUrl"></div>
+                <div id="tooltipAdditionalContent"></div>
+            </div>
+
+            <!-- Lasso selection -->
+            <div id="lasso" class="hidden"></div>
+
+            <!-- Bottom-right overlay: zoom + fullscreen buttons -->
+            <div id="embeddedControls">
+                <div class="btn-group">
+                    <button id="zoomOutBtn2" class="btn btn-default" title="Zoom out [-]">
+                        <img src="bootstrap-icons/zoom-out.svg" class="icon-btn">
+                    </button>
+                    <button id="zoomInBtn2" class="btn btn-default" title="Zoom in [+]">
+                        <img src="bootstrap-icons/zoom-in.svg" class="icon-btn">
+                    </button>
+                </div>
+                <button id="enterFullScreenButton" class="btn btn-default" title="Full screen [f]">
+                    <img src="bootstrap-icons/fullscreen.svg" class="icon-btn">
+                </button>
+                <button id="exitFullScreenButton" class="btn btn-default hidden" title="Exit full screen [Esc]">
+                    <img src="bootstrap-icons/fullscreen-exit.svg" class="icon-btn">
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- MODALS                                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+
+<!-- Diagram key -->
+<div class="modal fade" id="keyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body centered">
+                <div id="diagramKey"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick find (space key) -->
+<div class="modal fade" id="quickFindModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <input id="quickFindModalFilter" type="text" placeholder="Start typing..." class="form-control">
+            </div>
+            <div class="modal-body">
+                <div id="quickFindModalItems"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Navigation (drill-down) -->
+<div class="modal fade" id="navigationModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-body" style="padding:0">
+                <select class="form-control" id="navigationList"></select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter -->
+<div class="modal fade" id="filterModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content centered">
+            <div class="modal-body">
+                <span id="tagSelector"></span>
+                <span>
+                    <button id="deselectAllTagsButton" type="button" class="btn btn-default" title="Deselect all">
+                        <img src="bootstrap-icons/x-lg.svg" class="icon-btn">
+                    </button>
+                    <button id="selectAllTagsButton" type="button" class="btn btn-default" title="Select all">
+                        <img src="bootstrap-icons/sort-down-alt.svg" class="icon-btn">
+                    </button>
+                    <button id="deactivateFilter" type="button" class="btn btn-default" title="Deactivate filter">
+                        ✕ Off
+                    </button>
+                    <button id="activateFilter" type="button" class="btn btn-default" title="Apply filter">
+                        ✓ Apply
+                    </button>
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Perspectives -->
+<!-- (reuses #navigationModal via openNavigationModal()) -->
+
+<!-- Auto-layout -->
+<div class="modal fade" id="autoLayoutModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Auto Layout</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-8">
+                        <label class="form-label">Direction</label>
+                        <select class="form-select" id="autoLayoutRankDirection">
+                            <option value="TopBottom">Top to bottom</option>
+                            <option value="BottomTop">Bottom to top</option>
+                            <option value="LeftRight">Left to right</option>
+                            <option value="RightLeft">Right to left</option>
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Vertices</label>
+                        <input type="checkbox" id="autoLayoutVertices" class="form-check-input">
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-4">
+                        <label class="form-label">Rank separation</label>
+                        <input type="number" class="form-control" id="autoLayoutRankSeparation" value="300">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Node separation</label>
+                        <input type="number" class="form-control" id="autoLayoutNodeSeparation" value="300">
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label">Edge separation</label>
+                        <input type="number" class="form-control" id="autoLayoutEdgeSeparation" value="200">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="runAutoLayoutButton" type="button" class="btn btn-primary">Apply</button>
+                <button type="button" class="btn btn-default" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export -->
+<div class="modal fade" id="exportModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Export diagrams</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <select multiple class="form-select" id="exportViewList" size="8"></select>
+                </div>
+                <div class="mb-2">
+                    <label class="me-3">
+                        <input type="checkbox" id="exportMetadata" checked class="form-check-input"> Title/metadata
+                    </label>
+                    <label class="me-3">
+                        <input type="checkbox" id="exportCrop" class="form-check-input"> Crop
+                    </label>
+                    <label>
+                        <input type="checkbox" id="exportAnimationSteps" class="form-check-input"> Animation steps
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="exportSvgButton" type="button" class="btn btn-default">SVG</button>
+                <button id="exportPngButton" type="button" class="btn btn-primary">PNG</button>
+                <button type="button" class="btn btn-default" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- No views -->
+<div class="modal fade" id="noViewsModal" tabindex="-1">
+    <div class="modal-dialog modal-md">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>There are no views defined in this workspace.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT                                                              -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DiagramViewer.js is injected by Swift via evaluateJavaScript after didFinish -->
+
+</body>
+</html>

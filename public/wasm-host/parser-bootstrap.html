@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Structurizr WASM Parser Host</title>
+</head>
+<body>
+<!--
+    Hidden host page for the structurizr-parser WasmGC module.
+    Loaded by WasmParserService into an off-screen WKWebView via the
+    custom ./parser-bootstrap.html URL.
+
+    Why a custom URL scheme instead of file://?
+    WebKit refuses to load .wasm binaries over file:// origins. The
+    StructurizrSchemeHandler serves every ./<name>
+    request from the app bundle's Resources/WasmHost/ directory with
+    correct MIME types (application/javascript, application/wasm).
+
+    Lifecycle:
+      1. Swift loads this page and waits for window.__parserReady to resolve.
+      2. The inline script installs the ready-promise.
+      3. The <script src> below pulls the GraalVM launcher; at document-end
+         time the boot script awaits GraalVM.run([]), which runs our Java
+         main() and installs globalThis.structurizrParseDsl.
+      4. __parserReady resolves, Swift can start calling structurizrParseDsl.
+
+    Per-parse calls:
+      • Swift prepares {absolutePath: contents} and assigns it to
+        globalThis.__structurizrFiles before each parse.
+      • globalThis.structurizrReadFile simply reads from that map
+        synchronously, matching the Java-side expander's
+        Function<String,String> contract.
+      • Swift invokes globalThis.structurizrParseDsl(rootPath, rootText)
+        and awaits the JSON envelope.
+-->
+
+<script>
+    // Ready-promise used by Swift via callAsyncJavaScript("await window.__parserReady; ...").
+    window.__parserReady = new Promise((resolve, reject) => {
+        window.__parserResolve = resolve;
+        window.__parserReject = reject;
+    });
+
+    // File map filled in per-parse by Swift before calling structurizrParseDsl.
+    // Keys are absolute file paths on the host; values are UTF-8 file contents.
+    window.__structurizrFiles = Object.create(null);
+
+    // Host-side file reader. The Java DslIncludeExpander calls this for every
+    // !include directive. Returning null signals "not found" — the expander
+    // then throws a DSL parse error that includes the resolved path.
+    window.structurizrReadFile = function(absolutePath) {
+        var p = String(absolutePath);
+        var files = window.__structurizrFiles;
+        if (files && Object.prototype.hasOwnProperty.call(files, p)) {
+            return files[p];
+        }
+        return null;
+    };
+</script>
+
+<!-- GraalVM Web Image launcher. Sets up globalThis.GraalVM and loads the wasm module. -->
+<script src="./structurizr-parser.js"></script>
+
+<script>
+    (async () => {
+        try {
+            if (typeof GraalVM === "undefined" || typeof GraalVM.run !== "function") {
+                throw new Error("GraalVM launcher did not expose globalThis.GraalVM.run");
+            }
+            // Boots the Substrate VM runtime and runs our Java main(), which installs
+            // globalThis.structurizrParseDsl via the @JS binding.
+            await GraalVM.run([]);
+            if (typeof globalThis.structurizrParseDsl !== "function") {
+                throw new Error("Java main() did not install globalThis.structurizrParseDsl");
+            }
+            window.__parserResolve();
+        } catch (e) {
+            var msg = (e && (e.message || e.toString())) || "unknown boot error";
+            console.error("[wasm-parser] boot failed:", msg);
+            window.__parserReject(msg);
+        }
+    })();
+</script>
+</body>
+</html>
