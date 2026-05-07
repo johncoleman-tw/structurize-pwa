@@ -58,7 +58,7 @@ export function getParser(): Promise<ParserBridge> {
 async function createBridge(): Promise<ParserBridge> {
   const frame = document.createElement('iframe');
   frame.id = 'wasm-parser-frame';
-  frame.src = '/wasm-host/parser-bootstrap.html';
+  frame.src = import.meta.env.BASE_URL + 'wasm-host/parser-bootstrap.html';
   frame.setAttribute('aria-hidden', 'true');
   frame.style.cssText =
     'position:absolute;width:0;height:0;border:0;visibility:hidden;';

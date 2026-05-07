@@ -89,7 +89,7 @@ export async function attachDiagramHost(
   // <script src> works fine; no need to fetch+inline.
   await new Promise<void>((resolve, reject) => {
     const script = doc.createElement('script');
-    script.src = '/diagram-viewer/js/DiagramViewer.js';
+    script.src = import.meta.env.BASE_URL + 'diagram-viewer/js/DiagramViewer.js';
     script.addEventListener('load', () => resolve(), { once: true });
     script.addEventListener(
       'error',

@@ -91,7 +91,7 @@ export function DiagramFrame({
     <div className={className} style={{ position: 'relative', ...style }}>
       <iframe
         ref={iframeRef}
-        src="/diagram-viewer/DiagramViewer.html"
+        src={import.meta.env.BASE_URL + 'diagram-viewer/DiagramViewer.html'}
         title="Structurizr diagram"
         style={{
           width: '100%',
