@@ -39,6 +39,17 @@ export default defineConfig({
         // Keep the heavy parser/renderer assets OUT of the precache manifest
         // (slow first install, big bandwidth). They get cached on first fetch.
         globIgnores: ['**/wasm-host/**', '**/diagram-viewer/**'],
+        // Workbox's SPA navigateFallback defaults to serving index.html for
+        // any navigation that doesn't match a precached asset. That's right
+        // for client routes — but iframes navigating to parser-bootstrap.html
+        // or DiagramViewer.html ARE navigations, and we must NOT have them
+        // fall through to index.html. The runtime-caching rules below handle
+        // those URLs; this denylist makes sure navigateFallback gets out of
+        // the way first.
+        navigateFallbackDenylist: [
+          /\/wasm-host\//,
+          /\/diagram-viewer\//,
+        ],
         runtimeCaching: [
           {
             urlPattern: /\/wasm-host\/.*\.(?:wasm|js|html)$/,
