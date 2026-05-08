@@ -3,6 +3,7 @@ import { getParser, type WorkspaceJson } from './services/wasmParser';
 import { DiagramFrame } from './components/DiagramFrame';
 import type { DiagramMessage } from './services/diagramHost';
 import { downloadDataUri, safeFilename } from './services/downloadDataUri';
+import { UpdatePrompt } from './components/UpdatePrompt';
 import { WelcomePane } from './components/WelcomePane';
 import type { LoadedProject } from './services/workspaceFs';
 
@@ -320,6 +321,8 @@ export function App() {
           {exportToast}
         </div>
       )}
+
+      <UpdatePrompt />
     </div>
   );
 }

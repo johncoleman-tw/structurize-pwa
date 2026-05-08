@@ -11,7 +11,12 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' (vs 'autoUpdate'): a new SW is downloaded in the background
+      // but parks in the waiting state. Activation only happens when the user
+      // explicitly clicks the update button rendered by UpdatePrompt.tsx.
+      // This means a compromised build cannot silently replace the running
+      // version on the user's device — they see the prompt and decide.
+      registerType: 'prompt',
       includeAssets: ['icon.svg'],
       manifest: {
         name: 'Structurize',
