@@ -3,6 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      Content-Security-Policy (parent document).
+
+      Strategy: defence-in-depth against a compromised build of this PWA. Even
+      if attacker-controlled JS lands in the bundle, `connect-src 'self'` blocks
+      every outbound network sink (fetch, XHR, WebSocket, sendBeacon) to any
+      origin other than this one — so picked workspace files cannot be
+      exfiltrated. The parent doesn't need 'unsafe-inline' or 'unsafe-eval'
+      because Vite emits external module scripts and the React app uses inline
+      style props (which are element.style assignments, not <style> tags, and
+      are unaffected by style-src). 'wasm-unsafe-eval' is required for the
+      iframes to compile WebAssembly modules.
+
+      The iframe documents (parser-bootstrap.html, DiagramViewer.html) have
+      their own CSPs injected by scripts/copy-assets.mjs — same connect-src
+      lockdown but more permissive on script-src to keep the vendored
+      jQuery/JointJS code working.
+
+      See SECURITY.md for the full threat model.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; frame-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'; object-src 'none';" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
     <meta name="theme-color" content="#3066B7" />
     <meta name="description" content="View Structurizr DSL workspaces in the browser." />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />

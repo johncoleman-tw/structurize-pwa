@@ -75,3 +75,48 @@ if (await exists(bootstrap)) {
     console.log('[copy-assets] patched parser-bootstrap.html scheme URLs -> relative');
   }
 }
+
+// Inject a CSP meta tag into the two iframe HTML files.
+//
+// The parent index.html has its own (tighter) CSP, but it does NOT cascade
+// into iframes — each document is constrained by its own CSP. Without one,
+// a compromised iframe could fetch() to anywhere on the internet. The CSP
+// below keeps connect-src locked to 'self' (the central anti-exfiltration
+// guarantee) while leaving script-src/style-src permissive enough that the
+// vendored jQuery/JointJS/structurizr-* code keeps working.
+//
+// 'unsafe-inline' on script-src is needed because parser-bootstrap.html and
+// DiagramViewer.html both contain inline <script> blocks that we don't want
+// to rewrite (keeps upstream sync clean). 'unsafe-eval' is needed because
+// jQuery 3.6.x uses Function() in DOMEval/globalEval. Both are acceptable
+// in the presence of a strict connect-src — even if an attacker can run
+// arbitrary code, they cannot send anything off-machine.
+
+const iframeCsp =
+  '<meta http-equiv="Content-Security-Policy" content="' +
+  "default-src 'self'; " +
+  "connect-src 'self'; " +
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; " +
+  "style-src 'self' 'unsafe-inline'; " +
+  "img-src 'self' data: blob:; " +
+  "font-src 'self' data:; " +
+  "frame-ancestors 'self'; " +
+  "base-uri 'self'; " +
+  "form-action 'none'; " +
+  "object-src 'none';" +
+  '">';
+
+async function injectIframeCsp(htmlPath, label) {
+  if (!(await exists(htmlPath))) return;
+  let html = await readFile(htmlPath, 'utf8');
+  if (html.includes('Content-Security-Policy')) return; // already injected
+  html = html.replace(/<head([^>]*)>/i, (m, attrs) => `<head${attrs}>\n    ${iframeCsp}`);
+  await writeFile(htmlPath, html, 'utf8');
+  console.log(`[copy-assets] injected CSP meta into ${label}`);
+}
+
+await injectIframeCsp(bootstrap, 'parser-bootstrap.html');
+await injectIframeCsp(
+  join(projectRoot, 'public/diagram-viewer/DiagramViewer.html'),
+  'DiagramViewer.html',
+);
