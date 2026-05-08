@@ -7,6 +7,8 @@ import { UpdatePrompt } from './components/UpdatePrompt';
 import { WelcomePane } from './components/WelcomePane';
 import type { LoadedProject } from './services/workspaceFs';
 
+const REPO_URL = 'https://github.com/johncoleman-tw/structurize-pwa';
+
 interface ViewSummary {
   key: string;
   type: string;
@@ -170,6 +172,7 @@ export function App() {
         }}
       >
         <strong style={{ fontSize: 16 }}>Structurize</strong>
+        <CommitSha />
 
         {phase.kind === 'ready' && (
           <>
@@ -332,6 +335,43 @@ interface ViewListItemProps {
   type: string;
   active: boolean;
   onClick: () => void;
+}
+
+/**
+ * Shows the git commit SHA the running build was made from. Click-through
+ * to the commit on GitHub so users can read the actual diff for the
+ * version they're running — useful for verifying a build before clicking
+ * Update on a new SW version.
+ */
+function CommitSha() {
+  const sha = __APP_COMMIT__;
+  const built = __APP_BUILT__;
+  const baseStyle: React.CSSProperties = {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 11,
+    color: '#888',
+    textDecoration: 'none',
+  };
+
+  if (sha === 'dev' || sha.length < 7) {
+    return (
+      <span style={baseStyle} title={`Built ${built}`}>
+        dev
+      </span>
+    );
+  }
+
+  return (
+    <a
+      href={`${REPO_URL}/commit/${sha}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Commit ${sha}\nBuilt ${built}\nClick to view this commit on GitHub`}
+      style={baseStyle}
+    >
+      {sha.slice(0, 7)}
+    </a>
+  );
 }
 
 function ViewListItem({ label, type, active, onClick }: ViewListItemProps) {
