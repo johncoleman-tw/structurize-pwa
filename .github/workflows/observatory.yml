@@ -1,0 +1,94 @@
+name: Mozilla Observatory
+
+on:
+  # Run automatically after the Deploy workflow finishes (success or failure
+  # — we want the Observatory result either way for visibility).
+  workflow_run:
+    workflows: ['Deploy to GitHub Pages']
+    types: [completed]
+  # Allow manual re-runs without redeploying.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # Informational only — never block anything.
+    continue-on-error: true
+    steps:
+      - name: Mozilla Observatory scan
+        env:
+          # Observatory scans by host, not by path. GitHub Pages applies the
+          # same headers to every project under a user's *.github.io domain,
+          # so scanning the host gives us the headers our PWA receives.
+          HOST: ${{ github.repository_owner }}.github.io
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -uo pipefail
+
+          API='https://observatory.mozilla.org/api/v2/scan'
+
+          echo "Requesting fresh scan of $HOST"
+          # Trigger a new scan. POST returns the scan record (possibly still
+          # pending). curl -f would fail on 5xx; we use --fail-with-body so
+          # we still see the response body on errors but don't break the job
+          # (continue-on-error covers that anyway).
+          curl -sS --fail-with-body -X POST "$API?host=$HOST" -o /tmp/scan-init.json \
+            || echo "POST failed; will fall through to GET"
+
+          # Poll up to 90s for the scan to finish. Observatory states are
+          # PENDING / RUNNING / FINISHED / FAILED.
+          STATE=""
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
+            curl -sS "$API?host=$HOST" -o /tmp/scan.json || true
+            STATE=$(jq -r '.state // "UNKNOWN"' /tmp/scan.json 2>/dev/null || echo "UNKNOWN")
+            echo "  poll $i: state=$STATE"
+            if [ "$STATE" = "FINISHED" ] || [ "$STATE" = "FAILED" ]; then break; fi
+            sleep 5
+          done
+
+          # Pull out the headline numbers. Defaults guard against API changes
+          # so we always have *something* to log to the summary.
+          GRADE=$(jq -r '.grade // "?"' /tmp/scan.json)
+          SCORE=$(jq -r '.score // "?"' /tmp/scan.json)
+          PASSED=$(jq -r '.tests_passed // "?"' /tmp/scan.json)
+          FAILED=$(jq -r '.tests_failed // "?"' /tmp/scan.json)
+
+          REPORT_URL="https://developer.mozilla.org/en-US/observatory/analyze?host=$HOST"
+
+          {
+            echo "## Mozilla Observatory — \`$HOST\`"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Grade | **$GRADE** |"
+            echo "| Score | $SCORE |"
+            echo "| Tests passed | $PASSED |"
+            echo "| Tests failed | $FAILED |"
+            echo "| Final state | \`$STATE\` |"
+            echo ""
+            echo "[Full report on observatory.mozilla.org]($REPORT_URL)"
+            echo ""
+            echo "### Caveat"
+            echo ""
+            echo "Observatory grades only **HTTP response headers**, not \`<meta http-equiv>\` tags."
+            echo "This PWA's Content-Security-Policy is delivered as a meta tag because GitHub Pages"
+            echo "does not allow custom HTTP headers on user sites. Observatory therefore reports"
+            echo "no CSP and the grade is artificially depressed. To verify the meta-tag CSP itself,"
+            echo "run it through [Google's CSP Evaluator](https://csp-evaluator.withgoogle.com/)"
+            echo "or check DevTools → Network → \`index.html\` → Response → look for the meta tag."
+            echo ""
+            echo "Detailed test breakdown:"
+            echo ""
+            echo '```json'
+            jq '.tests // {}' /tmp/scan.json | head -200
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Echo to job log too so it shows up in the streaming output, not
+          # just the summary tab.
+          echo ""
+          echo "Grade: $GRADE  Score: $SCORE  Passed: $PASSED  Failed: $FAILED"
+          echo "Report: $REPORT_URL"
