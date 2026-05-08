@@ -73,6 +73,18 @@ export default defineConfig({
               expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 },
             },
           },
+          {
+            // Theme JSON fetched by the Structurizr renderer (e.g.
+            // /themes/default/theme.json). CacheFirst so subsequent loads
+            // work offline once the theme has been seen.
+            urlPattern: ({ url }) => url.origin === 'https://static.structurizr.com',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'structurize-themes',
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
       },
       devOptions: {

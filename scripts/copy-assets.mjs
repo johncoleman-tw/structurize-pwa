@@ -92,13 +92,22 @@ if (await exists(bootstrap)) {
 // in the presence of a strict connect-src — even if an attacker can run
 // arbitrary code, they cannot send anything off-machine.
 
+// `https://static.structurizr.com` is the Structurizr project's theme host:
+// workspaces commonly reference theme.json files there (e.g.
+// `https://static.structurizr.com/themes/default/theme.json`). Without this
+// exception, the renderer logs `Could not load theme from … ; error 0`
+// because the browser blocks the cross-origin fetch under our connect-src.
+// We allow it for both connect-src (theme JSON fetch) and img-src (theme-
+// referenced icons). This is a narrow widening of the trust boundary — we
+// already trust structurizr.com for the WASM parser and renderer JS we
+// vendor from that project.
 const iframeCsp =
   '<meta http-equiv="Content-Security-Policy" content="' +
   "default-src 'self'; " +
-  "connect-src 'self'; " +
+  "connect-src 'self' https://static.structurizr.com; " +
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; " +
   "style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data: blob:; " +
+  "img-src 'self' data: blob: https://static.structurizr.com; " +
   "font-src 'self' data:; " +
   "frame-ancestors 'self'; " +
   "base-uri 'self'; " +
