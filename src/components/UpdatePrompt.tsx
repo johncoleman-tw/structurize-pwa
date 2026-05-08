@@ -18,6 +18,16 @@ export function UpdatePrompt() {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
+    onRegisteredSW(_url, registration) {
+      // Poll for SW updates every 60s. Without this, the browser only checks
+      // on hard navigation (throttled to once per 24h) and Pages caches sw.js
+      // for ~10min, so a deploy can take hours to propagate. With this, the
+      // prompt fires within ~60s of a new build going live.
+      if (!registration) return;
+      setInterval(() => {
+        registration.update().catch(() => {});
+      }, 60_000);
+    },
     onRegisterError(error) {
       console.error('[sw] registration error:', error);
     },
