@@ -16,7 +16,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ───────────────────────────────────────────────────────────────────────
+  # Security scans run before the build. A high-severity npm advisory blocks
+  # the deploy; vendored-JS findings (jQuery, JointJS, etc.) are reported but
+  # do not block, because most cannot be fixed without diverging from the
+  # upstream Structurize/Java project. See SECURITY.md for the rationale.
+  # ───────────────────────────────────────────────────────────────────────
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # ── npm-dependency CVEs (blocks deploy on high+) ────────────────────
+      # pnpm audit reads pnpm-lock.yaml and queries the npm advisory database.
+      # The --audit-level threshold is intentionally set to "high" — moderate
+      # findings tend to be transitive issues with low real-world exploitability
+      # and would otherwise produce churny noise on every Dependabot bump.
+      - name: pnpm audit (npm dependencies)
+        run: pnpm audit --audit-level=high
+
+      # ── Vendored-JS CVEs (informational; does not block deploy) ─────────
+      # Retire.js fingerprints files by content hash and matches against its
+      # vulnerability database. Run against public/diagram-viewer where the
+      # jQuery / JointJS / lodash / dagre / structurizr-* JS lives (these
+      # files are vendored from the upstream structurize repo and cannot be
+      # patched here).
+      #
+      # `continue-on-error: true` keeps deploys working even when the scan
+      # reports unfixable vendored vulns. The findings remain visible in the
+      # action log so they can be reviewed; once the baseline is established
+      # we can flip this to a hard block plus a .retireignore.json for the
+      # specific CVEs we accept.
+      - name: Retire.js (vendored JS — informational)
+        continue-on-error: true
+        run: npx --yes retire --path public/diagram-viewer --severity high --outputformat text
+
   build:
+    needs: security
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
