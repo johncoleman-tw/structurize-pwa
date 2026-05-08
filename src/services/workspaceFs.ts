@@ -12,11 +12,13 @@
 // includer's directory, so as long as every file in the picked folder lives
 // under the same virtual root, includes resolve correctly.
 //
-// Multi-workspace detection mirrors WasmParserService.swift findAllExtensionWorkspaces:
-//   • any .dsl file containing "workspace extends" is one entry
-//   • 0 such files → fall back to workspace.dsl as a single entry
-//   • 1 such file  → single-entry project
-//   • 2+ files     → multi-workspace project (e.g. crewing/, acars/, ...)
+// Multi-workspace detection: every `workspace.dsl` file in the picked tree
+// is treated as one entry, whether or not it uses `workspace extends`. This
+// is intentionally looser than the Swift app's findAllExtensionWorkspaces
+// (which requires `workspace extends`) — it picks up plain standalone
+// workspaces in subdirectories that the strict rule would otherwise skip.
+// Fallback for projects with no workspace.dsl: any single .dsl file
+// containing the `workspace` keyword.
 
 const ALLOWED_EXTS = new Set(['dsl', 'md', 'adoc', 'markdown']);
 
@@ -200,23 +202,22 @@ function assemble(files: WorkspaceFile[], rootName: string): LoadedProject {
 }
 
 /**
- * Mirrors WasmParserService.swift findAllExtensionWorkspaces + findEntryPoint:
- *   1. Every .dsl file containing "workspace extends" is an entry (multi-workspace)
- *   2. If none, fall back to the first workspace.dsl
- *   3. If still none, any .dsl file containing the "workspace" keyword
+ * Find every `workspace.dsl` in the tree and treat each as one entry —
+ * whether or not it uses `workspace extends`. A folder containing two or
+ * more such files becomes a multi-workspace project; a folder with one is
+ * single-entry. Falls back to any single .dsl file with the `workspace`
+ * keyword for projects that don't follow the workspace.dsl naming
+ * convention at all.
  */
 function findWorkspaceEntries(dslFiles: WorkspaceFile[]): WorkspaceEntry[] {
-  const extending = dslFiles.filter((f) => /\bworkspace\s+extends\b/.test(f.content));
-  if (extending.length > 0) {
+  const wsDsl = dslFiles.filter((f) => f.name === 'workspace.dsl');
+  if (wsDsl.length > 0) {
     // Sort by path for stable ordering across reloads.
-    return extending
+    return wsDsl
       .slice()
       .sort((a, b) => a.path.localeCompare(b.path))
       .map(makeEntry);
   }
-
-  const wsDsl = dslFiles.find((f) => f.name === 'workspace.dsl');
-  if (wsDsl) return [makeEntry(wsDsl)];
 
   const anyWorkspace = dslFiles.find((f) => /\bworkspace\b/.test(f.content));
   return anyWorkspace ? [makeEntry(anyWorkspace)] : [];
