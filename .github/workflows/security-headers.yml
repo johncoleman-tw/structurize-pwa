@@ -1,8 +1,8 @@
-name: Mozilla Observatory
+name: Security headers check
 
 on:
-  # Run automatically after the Deploy workflow finishes (success or failure
-  # — we want the Observatory result either way for visibility).
+  # Run automatically after the Deploy workflow finishes — we want this
+  # information regardless of whether the deploy succeeded.
   workflow_run:
     workflows: ['Deploy to GitHub Pages']
     types: [completed]
@@ -13,82 +13,98 @@ permissions:
   contents: read
 
 jobs:
-  scan:
+  check:
     runs-on: ubuntu-latest
     # Informational only — never block anything.
     continue-on-error: true
     steps:
-      - name: Mozilla Observatory scan
+      - name: Inspect response headers on the deployed URL
         env:
-          # Observatory scans by host, not by path. GitHub Pages applies the
-          # same headers to every project under a user's *.github.io domain,
-          # so scanning the host gives us the headers our PWA receives.
-          HOST: ${{ github.repository_owner }}.github.io
-          REPO: ${{ github.event.repository.name }}
+          URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: |
           set -uo pipefail
 
-          API='https://observatory.mozilla.org/api/v2/scan'
+          echo "Fetching headers from $URL"
+          # -I = HEAD request, -s = silent, -L = follow redirects.
+          curl -sIL "$URL" -o /tmp/headers.raw
+          echo "── Raw response headers ─────────────────────────────────"
+          cat /tmp/headers.raw
+          echo "─────────────────────────────────────────────────────────"
 
-          echo "Requesting fresh scan of $HOST"
-          # Trigger a new scan. POST returns the scan record (possibly still
-          # pending). curl -f would fail on 5xx; we use --fail-with-body so
-          # we still see the response body on errors but don't break the job
-          # (continue-on-error covers that anyway).
-          curl -sS --fail-with-body -X POST "$API?host=$HOST" -o /tmp/scan-init.json \
-            || echo "POST failed; will fall through to GET"
+          # Helper: case-insensitive grep for a header, return its value
+          # (everything after the first colon, trimmed). Empty string if absent.
+          hdr() {
+            local name="$1"
+            grep -i "^${name}:" /tmp/headers.raw | head -1 \
+              | sed -E "s/^[^:]+:[[:space:]]*//; s/[[:space:]]+$//" \
+              || true
+          }
 
-          # Poll up to 90s for the scan to finish. Observatory states are
-          # PENDING / RUNNING / FINISHED / FAILED.
-          STATE=""
-          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
-            curl -sS "$API?host=$HOST" -o /tmp/scan.json || true
-            STATE=$(jq -r '.state // "UNKNOWN"' /tmp/scan.json 2>/dev/null || echo "UNKNOWN")
-            echo "  poll $i: state=$STATE"
-            if [ "$STATE" = "FINISHED" ] || [ "$STATE" = "FAILED" ]; then break; fi
-            sleep 5
-          done
+          # Mark a header as set (✓), missing (✗), or "via meta tag" for the
+          # ones we know GitHub Pages won't emit but our HTML carries.
+          present() { [ -n "$1" ] && echo "✓" || echo "✗"; }
 
-          # Pull out the headline numbers. Defaults guard against API changes
-          # so we always have *something* to log to the summary.
-          GRADE=$(jq -r '.grade // "?"' /tmp/scan.json)
-          SCORE=$(jq -r '.score // "?"' /tmp/scan.json)
-          PASSED=$(jq -r '.tests_passed // "?"' /tmp/scan.json)
-          FAILED=$(jq -r '.tests_failed // "?"' /tmp/scan.json)
+          STATUS=$(awk '/^HTTP/ {code=$2} END {print code}' /tmp/headers.raw)
+          CSP=$(hdr 'content-security-policy')
+          HSTS=$(hdr 'strict-transport-security')
+          XCTO=$(hdr 'x-content-type-options')
+          XFO=$(hdr 'x-frame-options')
+          REFERRER=$(hdr 'referrer-policy')
+          PERMS=$(hdr 'permissions-policy')
 
-          REPORT_URL="https://developer.mozilla.org/en-US/observatory/analyze?host=$HOST"
+          # CSP via meta tag — pull it out of the page body if no header.
+          META_CSP=""
+          if [ -z "$CSP" ]; then
+            curl -sL "$URL" -o /tmp/page.html
+            META_CSP=$(grep -oE '<meta[^>]+Content-Security-Policy[^>]+>' /tmp/page.html | head -1 || true)
+          fi
 
           {
-            echo "## Mozilla Observatory — \`$HOST\`"
+            echo "## Security headers — \`$URL\`"
             echo ""
-            echo "| | |"
-            echo "|---|---|"
-            echo "| Grade | **$GRADE** |"
-            echo "| Score | $SCORE |"
-            echo "| Tests passed | $PASSED |"
-            echo "| Tests failed | $FAILED |"
-            echo "| Final state | \`$STATE\` |"
+            echo "Final HTTP status: \`$STATUS\`"
             echo ""
-            echo "[Full report on observatory.mozilla.org]($REPORT_URL)"
+            echo "| Header | Status | Value |"
+            echo "|---|---|---|"
+            if [ -n "$CSP" ]; then
+              echo "| Content-Security-Policy | ✓ header | \`$(echo "$CSP" | head -c 80)…\` |"
+            elif [ -n "$META_CSP" ]; then
+              echo "| Content-Security-Policy | ✓ via meta tag | (in HTML head) |"
+            else
+              echo "| Content-Security-Policy | ✗ | — |"
+            fi
+            echo "| Strict-Transport-Security | $(present "$HSTS") | \`${HSTS:-—}\` |"
+            echo "| X-Content-Type-Options    | $(present "$XCTO") | \`${XCTO:-—}\` |"
+            echo "| X-Frame-Options           | $(present "$XFO")  | \`${XFO:-—}\` |"
+            echo "| Referrer-Policy           | $(present "$REFERRER") | \`${REFERRER:-—}\` |"
+            echo "| Permissions-Policy        | $(present "$PERMS") | \`${PERMS:-—}\` |"
             echo ""
-            echo "### Caveat"
+
+            echo "### Notes"
             echo ""
-            echo "Observatory grades only **HTTP response headers**, not \`<meta http-equiv>\` tags."
-            echo "This PWA's Content-Security-Policy is delivered as a meta tag because GitHub Pages"
-            echo "does not allow custom HTTP headers on user sites. Observatory therefore reports"
-            echo "no CSP and the grade is artificially depressed. To verify the meta-tag CSP itself,"
-            echo "run it through [Google's CSP Evaluator](https://csp-evaluator.withgoogle.com/)"
-            echo "or check DevTools → Network → \`index.html\` → Response → look for the meta tag."
+            echo "- **GitHub Pages does not allow custom HTTP headers.** Anything missing as a"
+            echo "  real header above is structural — moving the site behind a custom domain"
+            echo "  fronted by Cloudflare / Netlify / etc. would let us add HSTS, X-Frame-Options,"
+            echo "  X-Content-Type-Options, etc."
+            echo "- **CSP and Referrer-Policy** are delivered via \`<meta http-equiv>\` in"
+            echo "  [index.html](../blob/main/index.html), so they apply at the page level"
+            echo "  even though they don't appear as response headers."
             echo ""
-            echo "Detailed test breakdown:"
+            echo "### Manual deeper checks"
             echo ""
-            echo '```json'
-            jq '.tests // {}' /tmp/scan.json | head -200
-            echo '```'
+            echo "- [Google CSP Evaluator](https://csp-evaluator.withgoogle.com/) — paste the"
+            echo "  meta-tag CSP from \`view-source:$URL\` to validate it for known bypass patterns."
+            echo "- [securityheaders.com](https://securityheaders.com/?q=$URL&followRedirects=on)"
+            echo "  — full path-aware scan (the link above pre-fills the URL)."
+            echo "- [Mozilla Observatory](https://developer.mozilla.org/en-US/observatory) — note"
+            echo "  this is **host-only** and currently can't scan project-style GitHub Pages"
+            echo "  (no site at the bare \`*.github.io\` root). Useful only if you move to a"
+            echo "  custom domain or a user-pages repo."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Echo to job log too so it shows up in the streaming output, not
-          # just the summary tab.
+          # Echo to streaming log too.
           echo ""
-          echo "Grade: $GRADE  Score: $SCORE  Passed: $PASSED  Failed: $FAILED"
-          echo "Report: $REPORT_URL"
+          echo "CSP header:    $([ -n "$CSP" ] && echo present || ([ -n "$META_CSP" ] && echo "via meta tag" || echo absent))"
+          echo "HSTS:          ${HSTS:-absent}"
+          echo "X-CT-Options:  ${XCTO:-absent}"
+          echo "Referrer:      ${REFERRER:-absent}"
